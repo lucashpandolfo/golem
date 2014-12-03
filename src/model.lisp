@@ -6,16 +6,19 @@
            :initialize-models
            :model-name
            :model-primary-key
-           :model-foreign-keys))
+           :model-foreign-keys
+	   :model-m2m-keys))
 
 (in-package :golem.model)
 
 ;;; Model definition
-(defstruct model 
+(defstruct model
+  "A database Model."
   (name    nil :type string)
   (columns nil :type list))
 
 (defstruct model-column
+  "A column of the database model."
   (name          nil :type string)
   (type          nil)
   (primary-key-p nil :type boolean)
@@ -33,12 +36,14 @@
   )
 
 (defun normalize-name (name)
+  "Converts a symbol or string name to a downcased string."
   (etypecase name
     (null    nil)
     (string  (string-downcase name))
     (symbol  (normalize-name (symbol-name name)))))
 
 (defun denormalize-name (name)
+  "Transform a string name to a keyword."
   (etypecase name
     (string (intern (string-upcase name) :keyword))
     (t name)))
@@ -60,9 +65,23 @@
       (model-column-name *default-primary-key*))))
 
 (defun model-foreign-keys (model)
-  "Returns the model columns which are foreign keys as (fname . fmodel) pairs."
+  "Returns the model columns which are foreign keys as (fname-symbol . fmodel-name) pairs."
   (loop :for column :in (model-columns model)
-     :if (model-column-foreign-key column) :collect (cons (denormalize-name (model-column-name column)) (model-column-foreign-key column))))
+     :if (model-column-foreign-key column) 
+     :collect (cons (denormalize-name (model-column-name column)) 
+		    (model-column-foreign-key column))))
+
+(defun model-m2m-keys (model)
+  "Returns the model columns which are many to many keys
+   as (m2m-name-symbol . m2m-model-name) pairs."
+  (loop :for column :in (model-columns model)
+     :if (model-column-many-to-many column)
+     :collect (cons (denormalize-name (model-column-name column))
+		    (model-column-many-to-many column))))
+
+(defun model-m2m-table-name (model field-symbol-name)
+  "Returns the m2m table name for a field of a model as a string."
+  (concatenate 'string (model-name model) "-" (normalize-name field-symbol-name)))
 
 (defun at-most-one-of (&rest params)
   "Returns boolean indicating if zero or one of the parameters is not
@@ -78,8 +97,7 @@
          (type         (getf slot :type))
          (primary-key  (getf slot :primary-key))
          (foreign-key  (getf slot :foreign-key))
-         (many-to-many (getf slot :many-to-many))
-         )
+         (many-to-many (getf slot :many-to-many)))
 
     (assert (or type primary-key foreign-key many-to-many) ()
             "A type should be provided for slot ~a." name)
@@ -96,19 +114,20 @@
 		       :null-allowed t
 		       :default-value nil)))
 
-(defun add-model (name model)
-  (when (gethash name *defined-models*)
+(defun add-model (model-name model)
+  "Add a model to the model databse."
+  (when (gethash model-name *defined-models*)
     (warn "Redifining model ~a:~a: Migrations not implemented." 
-	  (package-name (symbol-package name)) 
-	  name))
-  (setf (gethash name *defined-models*) model)
-  name)
+	  (package-name (symbol-package model-name)) 
+	  model-name))
+  (setf (gethash model-name *defined-models*) model)
+  model-name)
 
-(defun get-model (name)
+(defun get-model (model-name)
   "Returns the model asociated with a name."
-  (let ((model (gethash name *defined-models*)))
+  (let ((model (gethash model-name *defined-models*)))
     (unless model
-      (error "Not such model: ~a." name))
+      (error "Not such model: ~a." model-name))
     model))
 
 (defmacro defmodel (name (&rest params) &rest slots)
@@ -119,14 +138,16 @@
   - type: A valid SxQL type
   - primary-key:  boolean
   - null-allowed: boolean (TODO)
-  - many-to-many: another model name (TODO)"
+  - foreign-key:  model name (symbol) (TODO)
+  - many-to-many: model name (symbol) (TODO)
+
+  If a primary key is not defined, a default one is created (named id)."
   (declare (ignorable params))
   `(add-model ',name 
 	      (make-model :name (normalize-name ',name)
 			  :columns (loop :for slot :in ',slots 
 					:collect
-				      (parse-model-slot slot))
-			  )))
+				      (parse-model-slot slot)))))
 
 ;;; Model to SxQL
 (defun prepare-column-definition (column)
@@ -137,20 +158,39 @@
    ))
 
 (defun create-table-for-model (model)
-  "Create an SxQL create-table statement for the model. Adds a primary
-   key if one is not defined."
-  (let ((columns (mapcar #'prepare-column-definition (model-columns model))))
-    (unless (model-has-primary-key model)
-      (push (prepare-column-definition *default-primary-key*) columns))
-    (sxql:make-statement :create-table
-                         (convert-column-name (model-name model))
-                         columns)))
+  "Create one or more SxQL create-table statements for the model. Adds
+   a primary key if one is not defined. Creates auxiliary m2m tables
+   statements if neccessary. Returns a list of statements."
+  (declare (optimize (debug 3)))
+  (alexandria:flatten
+   (list 
+    (let ((columns (mapcar #'prepare-column-definition (model-columns model))))
+      (unless (model-has-primary-key model)
+	(push (prepare-column-definition *default-primary-key*) columns))
+      (sxql:make-statement :create-table
+			   (convert-column-name (model-name model))
+			   columns))
+
+    ;; Create auxiliary m2m tables
+    (let ((m2m (model-m2m-keys model)))
+      (when m2m
+	(loop :for (m2m-field-name . m2m-model-name) :in m2m
+	   :collect
+	   (let ((aux-table-name (model-m2m-table-name model m2m-field-name))
+		 (columns (mapcar #'prepare-column-definition 
+				  (list (make-model-column :name (normalize-name (model-name model)) :type 'integer)
+					(make-model-column :name (normalize-name m2m-model-name) :type 'integer)))))
+	     (sxql:make-statement :create-table
+				  (convert-column-name aux-table-name)
+				  columns))))))))
 
 ;;; Model initialization (DB creation)
 (defun initialize-model (model)
-  (handler-case
-      (prog1 t (execute-with-connection (create-table-for-model (get-model model))))
-    (error () nil)))
+  (let ((statements (create-table-for-model (get-model model))))
+    (loop :for statement :in statements :collect
+       (handler-case
+	   (prog1 t (execute-with-connection statement))
+	 (error () nil)))))
 
 (defun initialize-models (&rest models)
   (map 'list #'initialize-model models))

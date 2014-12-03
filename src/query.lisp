@@ -62,10 +62,10 @@
          (table (convert-column-name (convert-column-name (model-name model))))
          (set-values   (copy-seq (row-columns row)))
 	 (foreign-keys (model-foreign-keys model))
-         (primary-key (model-primary-key model))
+	 (m2m-keys     (model-m2m-keys model))
+         (primary-key  (model-primary-key model))
          (primary-key-value (get-property row primary-key))
-	 (try-insert t)
-	 )
+	 (try-insert t))
     ;; First save foreign objects recursively
     (loop :for (fkey-name . fkey-model) :in foreign-keys :do
        (let ((fobject (get-property row fkey-name)))
@@ -73,6 +73,20 @@
 	   (let* ((saved (save fobject))
 		  (fkey-value (get-property saved (model-primary-key (get-model fkey-model)))))
 	     (setf (getf set-values fkey-name) fkey-value)))))
+    
+    ;; Do the same for Many to many relationships
+    (loop :for (m2m-key-name . m2m-key-model) :in m2m-keys :do
+       (let ((m2m-objects (get-property row m2m-key-name)))
+	 (when m2m-objects
+	   (let* ((saved (mapcar #'save m2m-objects))
+		  (m2m-values (get-property saved (model-primary-key (get-model fkey-model)))))
+	     (setf (getf set-values fkey-name) fkey-value)))))
+    
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
     
     (when primary-key-value
       ;; Try update
