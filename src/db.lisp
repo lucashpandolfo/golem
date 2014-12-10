@@ -13,7 +13,6 @@
            :disconnect-toplevel
 	   :fetch-with-connection
            :execute-with-connection
-           :convert-column-name
 	   :last-row-id
            ))
 
@@ -57,15 +56,6 @@
     (:postgres #\")
     (:sqlite3 #\")
     (T nil)))
-
-(defun convert-column-name (name)
-  (typecase name
-    (symbol (intern (substitute #\- #\_
-                                (string-upcase (symbol-name name)))
-                    :keyword))
-    (string (intern (substitute #\- #\_
-                                (string-upcase name))
-                    :keyword))))
 
 (defun fetch-with-connection (statement)
   "Executes a statement and fetches the resulting rows."
