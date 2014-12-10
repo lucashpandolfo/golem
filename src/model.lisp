@@ -5,6 +5,9 @@
            :get-model
            :initialize-models
            :model-name
+           :model-table-name-as-keyword
+           :model-column-name-as-keyword
+           :model-m2m-table-name-as-keyword
            :model-primary-key
            :model-foreign-keys
 	   :model-m2m-keys))
@@ -51,8 +54,10 @@
   "Converts a symbol to a column keyword name."
   (intern 
    (string-upcase 
-    (escape-string 
-     (symbol-name symbol)))
+    ;(escape-string 
+     (symbol-name symbol)
+     ;)
+   )
    :keyword))
 
 (defun model-m2m-table-name-as-keyword (model field-name-symbol)
@@ -83,25 +88,25 @@
   (member t (mapcar #'model-column-primary-key-p (model-columns model))))
 
 (defun model-primary-key (model)
-  "Returns the model primary key name as a symbol."
-  (if (model-has-primary-key model)
+  "Returns the model primary key name as a keyword."
+  (if (model-has-primary-key model)      
       (loop :for column :in (model-columns model)
-	 :if (model-column-primary-key-p column) :return (model-column-name column))
-      (model-column-name *default-primary-key*)))
+         :if (model-column-primary-key-p column) :return (model-column-name-as-keyword (model-column-name column)))
+      (model-column-name-as-keyword (model-column-name *default-primary-key*))))
 
 (defun model-foreign-keys (model)
-  "Returns the model columns which are foreign keys as (fname-symbol . fmodel-name-symbol) pairs."
+  "Returns the model columns which are foreign keys as (fname-keyword . fmodel-name-symbol) pairs."
   (loop :for column :in (model-columns model)
      :if (model-column-foreign-key column)
-     :collect (cons (model-column-name column)
+     :collect (cons (model-column-name-as-keyword (model-column-name column))
 		    (model-column-foreign-key column))))
 
 (defun model-m2m-keys (model)
   "Returns the model columns which are many to many keys
-   as (m2m-name-symbol . m2m-model-name-symbol) pairs."
+   as (m2m-name-keyword . m2m-model-name-symbol) pairs."
   (loop :for column :in (model-columns model)
      :if (model-column-many-to-many column)
-     :collect (cons (model-column-name column)
+     :collect (cons (model-column-name-as-keyword (model-column-name column))
 		    (model-column-many-to-many column))))
 
 (defun at-most-one-of (&rest params)

@@ -58,8 +58,9 @@
   - validate field names
   - many-to-many"
   (declare (optimize (debug 3)))
-  (let* ((model (get-model (row-model row)))
-         (table (convert-column-name (convert-column-name (model-name model))))
+  (let* ((model        (get-model (row-model row)))
+         (main-model-name (model-name model))
+         (table-name   (model-table-name-as-keyword main-model-name))
          (set-values   (copy-seq (row-columns row)))
 	 (foreign-keys (model-foreign-keys model))
 	 (m2m-keys     (model-m2m-keys model))
@@ -68,45 +69,61 @@
 	 (try-insert t))
     ;; First save foreign objects recursively
     (loop :for (fkey-name . fkey-model) :in foreign-keys :do
+       ;; Save each foreign object
        (let ((fobject (get-property row fkey-name)))
 	 (when fobject
 	   (let* ((saved (save fobject))
 		  (fkey-value (get-property saved (model-primary-key (get-model fkey-model)))))
+	     ;; Replace the foreign objects with the corresponding foreign key
 	     (setf (getf set-values fkey-name) fkey-value)))))
-    
-    ;; Do the same for Many to many relationships
-    (loop :for (m2m-key-name . m2m-key-model) :in m2m-keys :do
-       (let ((m2m-objects (get-property row m2m-key-name)))
-	 (when m2m-objects
-	   (let* ((saved (mapcar #'save m2m-objects))
-		  (m2m-values (get-property saved (model-primary-key (get-model fkey-model)))))
-	     (setf (getf set-values fkey-name) fkey-value)))))
-    
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+    ;; Then save the main object
+    (let ((set-values (copy-seq set-values)))
+      ;; Remove m2m objects
+      (loop :for (m2m-key-name . m2m-key-model) :in m2m-keys :do
+         (remf set-values m2m-key-name))
+
+      (when primary-key-value
+        ;; Try updating if primary key is set
+        (let* ((where-update (sxql:make-op := primary-key primary-key-value))
+               (updated (execute-with-connection
+                         (sxql:make-statement :update table-name (apply #'sxql:set= set-values)
+                                              (sxql:make-clause :where where-update)))))
+          ;; Update successfull, do not insert
+          (when (> updated 0) (setf try-insert nil))))
+      
+      (when try-insert
+        ;;Try inserting
+        (let ((inserted (execute-with-connection
+                         (sxql:make-statement :insert-into table-name (apply #'sxql:set= set-values)))))
+          (unless (> inserted 0)
+            (error "Could not insert or update the object in the database."))
+          
+          (when (not primary-key-value)
+            ;; Update primary key
+            (setf (get-property row primary-key) (last-row-id))))))
     
-    (when primary-key-value
-      ;; Try update
-      (let* ((where-update (sxql:make-op := primary-key primary-key-value))
-	     (updated (execute-with-connection
-                       (sxql:make-statement :update table (apply #'sxql:set= set-values)
-					   (sxql:make-clause :where where-update)))))
-	;; Update successfull, do not insert
-	(when (> updated 0) (setf try-insert nil))))
-    
-    (when try-insert
-      ;;Try inserting
-      (let ((inserted (execute-with-connection
-		       (sxql:make-statement :insert-into table (apply #'sxql:set= set-values)))))
-	(unless (> inserted 0)
-	  (error "Could not insert or update the object in the database."))
-	
-	(when (not primary-key-value)
-	  ;; Update primary key
-	  (setf (get-property row primary-key) (last-row-id))))))
+    ;; Object correctly inserted/updated. At this point the primary
+    ;; key should be valid, so m2m objects can be saved.
+    (let ((main-pk (get-property row primary-key)))
+      (loop :for (m2m-key-name . m2m-model) :in m2m-keys :do
+         (let ((m2m-objects (get-property row m2m-key-name)))
+           ;; Save objects and get the saved pk's
+           (when m2m-objects
+             (let* ((saved      (mapcar #'save m2m-objects))
+                    (m2m-pk     (model-primary-key (get-model m2m-model)))
+                    (m2m-table  (model-m2m-table-name-as-keyword model m2m-key-name))
+                    (m2m-values (mapcar (lambda (s) (get-property s m2m-pk)) saved)))
+               (execute-with-connection (sxql:make-statement :delete-from m2m-table (sxql:make-clause :where (list := (model-column-name-as-keyword main-model-name) main-pk))))
+               (loop :for object :in m2m-objects
+                  :for object-key :in m2m-values :do
+                  (execute-with-connection 
+                   (sxql:make-statement 
+                    :insert-into m2m-table 
+                    (sxql:set= (model-column-name-as-keyword main-model-name) main-pk 
+                               m2m-model object-key)))
+                  (setf (get-property object m2m-pk) object-key)))))))
+    )
   row)
 
 ;;; Querys and filters
