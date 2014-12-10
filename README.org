@@ -1,7 +1,0 @@
-* Golem  - Django like data models for common lisp
-
-** Usage
-
-** Dependencies
-
-** Installation

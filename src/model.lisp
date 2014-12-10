@@ -14,12 +14,12 @@
 ;;; Model definition
 (defstruct model
   "A database Model."
-  (name    nil :type string)
+  (name    nil :type symbol)
   (columns nil :type list))
 
 (defstruct model-column
   "A column of the database model."
-  (name          nil :type string)
+  (name          nil :type symbol)
   (type          nil)
   (primary-key-p nil :type boolean)
   (foreign-key   nil :type symbol)
@@ -31,25 +31,51 @@
   "All currently defined models are stored here.")
 
 ;;; Model convenience functions
+(defun escape-string (string)
+  "Replaces some symbols in a string (-.\/) with '_'"
+  (ppcre:regex-replace-all "[-.\\/\|]" string "_"))
+
+(defun model-table-name-as-keyword (symbol)
+  "Converts a symbol to a table keyword name. The
+   final keyword consist of <package-name>_<symbol-name>"
+  (intern 
+   (string-upcase
+    (escape-string
+     (concatenate 'string
+		  (package-name (symbol-package symbol))
+		  "_"
+		  (symbol-name symbol))))
+   :keyword))
+
+(defun model-column-name-as-keyword (symbol)
+  "Converts a symbol to a column keyword name."
+  (intern 
+   (string-upcase 
+    (escape-string 
+     (symbol-name symbol)))
+   :keyword))
+
+(defun model-m2m-table-name-as-keyword (model field-name-symbol)
+  "Returns the m2m table name for a field of a model as a keyword. Yhe
+   final keyword consist of <package-name>_<model-name>_<field-name>."
+  (intern
+   (string-upcase
+    (escape-string
+     (concatenate 'string 
+		  (package-name (symbol-package (model-name model)))
+		  "_"
+		  (symbol-name (model-name model))
+		  "_" 
+		  (symbol-name field-name-symbol))))
+   :keyword))
+
+
 (defun valid-type-p (type)
   t
   )
 
-(defun normalize-name (name)
-  "Converts a symbol or string name to a downcased string."
-  (etypecase name
-    (null    nil)
-    (string  (string-downcase name))
-    (symbol  (normalize-name (symbol-name name)))))
-
-(defun denormalize-name (name)
-  "Transform a string name to a keyword."
-  (etypecase name
-    (string (intern (string-upcase name) :keyword))
-    (t name)))
-
 (defparameter *default-primary-key* 
-  (make-model-column :name (normalize-name  "id") :type 'integer :primary-key-p t :null-allowed nil)
+  (make-model-column :name 'id :type 'integer :primary-key-p t :null-allowed nil)
   "Default primary key if not defined by user.")
 
 (defun model-has-primary-key (model)
@@ -57,31 +83,26 @@
   (member t (mapcar #'model-column-primary-key-p (model-columns model))))
 
 (defun model-primary-key (model)
-  "Returns the model primary key name as a keyword."
-  (denormalize-name
-   (if (model-has-primary-key model)
-       (loop :for column :in (model-columns model)
-          :if (model-column-primary-key-p column) :return (model-column-name column))
-      (model-column-name *default-primary-key*))))
+  "Returns the model primary key name as a symbol."
+  (if (model-has-primary-key model)
+      (loop :for column :in (model-columns model)
+	 :if (model-column-primary-key-p column) :return (model-column-name column))
+      (model-column-name *default-primary-key*)))
 
 (defun model-foreign-keys (model)
-  "Returns the model columns which are foreign keys as (fname-symbol . fmodel-name) pairs."
+  "Returns the model columns which are foreign keys as (fname-symbol . fmodel-name-symbol) pairs."
   (loop :for column :in (model-columns model)
-     :if (model-column-foreign-key column) 
-     :collect (cons (denormalize-name (model-column-name column)) 
+     :if (model-column-foreign-key column)
+     :collect (cons (model-column-name column)
 		    (model-column-foreign-key column))))
 
 (defun model-m2m-keys (model)
   "Returns the model columns which are many to many keys
-   as (m2m-name-symbol . m2m-model-name) pairs."
+   as (m2m-name-symbol . m2m-model-name-symbol) pairs."
   (loop :for column :in (model-columns model)
      :if (model-column-many-to-many column)
-     :collect (cons (denormalize-name (model-column-name column))
+     :collect (cons (model-column-name column)
 		    (model-column-many-to-many column))))
-
-(defun model-m2m-table-name (model field-symbol-name)
-  "Returns the m2m table name for a field of a model as a string."
-  (concatenate 'string (model-name model) "-" (normalize-name field-symbol-name)))
 
 (defun at-most-one-of (&rest params)
   "Returns boolean indicating if zero or one of the parameters is not
@@ -106,7 +127,7 @@
     (cond
       (type (assert (valid-type-p type) () "The type ~a is not valid for the slot ~a." type name)))
 
-    (make-model-column :name (normalize-name name)
+    (make-model-column :name name
 		       :type type
 		       :primary-key-p primary-key
 		       :foreign-key  foreign-key
@@ -114,25 +135,28 @@
 		       :null-allowed t
 		       :default-value nil)))
 
-(defun add-model (model-name model)
+(defun add-model (model-symbol-name model)
   "Add a model to the model databse."
-  (when (gethash model-name *defined-models*)
+  (when (gethash model-symbol-name *defined-models*)
     (warn "Redifining model ~a:~a: Migrations not implemented." 
-	  (package-name (symbol-package model-name)) 
-	  model-name))
-  (setf (gethash model-name *defined-models*) model)
-  model-name)
+	  (package-name (symbol-package model-symbol-name)) 
+	  model-symbol-name))
+  (setf (gethash model-symbol-name *defined-models*) model)
+  model-symbol-name)
 
-(defun get-model (model-name)
+(defun get-model (model-symbol-name)
   "Returns the model asociated with a name."
-  (let ((model (gethash model-name *defined-models*)))
+  (let ((model (gethash model-symbol-name *defined-models*)))
     (unless model
-      (error "Not such model: ~a." model-name))
+      (error "Not such model: ~a." model-symbol-name))
     model))
 
 (defmacro defmodel (name (&rest params) &rest slots)
-  "Defines a model. Name will be translated to the table name. Params
+  "Defines a model. Name will be used to form the table name. Params
   are not used yet (but will be used in the future ... maybe).
+
+  The name of the table will be derived from the fully qualified symbol
+  name.
 
   Each slot has the form (name &allow-other-keys). As for now valid keys are:
   - type: A valid SxQL type
@@ -144,45 +168,52 @@
   If a primary key is not defined, a default one is created (named id)."
   (declare (ignorable params))
   `(add-model ',name 
-	      (make-model :name (normalize-name ',name)
+	      (make-model :name    ',name
 			  :columns (loop :for slot :in ',slots 
-					:collect
+				      :collect
 				      (parse-model-slot slot)))))
 
 ;;; Model to SxQL
 (defun prepare-column-definition (column)
-  (list (convert-column-name (model-column-name column))
+  ""
+  (list (model-column-name-as-keyword (model-column-name column))
         :type        (or (model-column-type column) 'integer)
         :not-null    (not (model-column-null-allowed column))
-        :primary-key (model-column-primary-key-p column)
-   ))
+        :primary-key (model-column-primary-key-p column)))
+
+(defun make-create-table-statement (table-name model-columns)
+  (let ((columns (mapcar #'prepare-column-definition model-columns)))
+    (sxql:make-statement :create-table
+			 table-name
+			 columns)))
 
 (defun create-table-for-model (model)
   "Create one or more SxQL create-table statements for the model. Adds
    a primary key if one is not defined. Creates auxiliary m2m tables
-   statements if neccessary. Returns a list of statements."
+   statements if neccessary. Returns a list of 'create table'
+   statements (main model table and many-to-many auxiliary tables if
+   needed)."
   (declare (optimize (debug 3)))
   (alexandria:flatten
-   (list 
-    (let ((columns (mapcar #'prepare-column-definition (model-columns model))))
+   (list
+
+    ;; Create main table
+    (let ((model-columns (model-columns model)))
       (unless (model-has-primary-key model)
-	(push (prepare-column-definition *default-primary-key*) columns))
-      (sxql:make-statement :create-table
-			   (convert-column-name (model-name model))
-			   columns))
+	(push *default-primary-key* model-columns))
+      (make-create-table-statement (model-table-name-as-keyword (model-name model))
+				   model-columns))
 
     ;; Create auxiliary m2m tables
     (let ((m2m (model-m2m-keys model)))
       (when m2m
 	(loop :for (m2m-field-name . m2m-model-name) :in m2m
 	   :collect
-	   (let ((aux-table-name (model-m2m-table-name model m2m-field-name))
-		 (columns (mapcar #'prepare-column-definition 
-				  (list (make-model-column :name (normalize-name (model-name model)) :type 'integer)
-					(make-model-column :name (normalize-name m2m-model-name) :type 'integer)))))
-	     (sxql:make-statement :create-table
-				  (convert-column-name aux-table-name)
-				  columns))))))))
+	   (make-create-table-statement 
+	    (model-m2m-table-name-as-keyword model m2m-field-name)
+	    (list (make-model-column :name (model-name model) :type 'integer)
+		  (make-model-column :name m2m-model-name     :type 'integer)))))))))
+
 
 ;;; Model initialization (DB creation)
 (defun initialize-model (model)

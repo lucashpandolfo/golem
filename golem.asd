@@ -17,6 +17,7 @@
   :license ""
   :depends-on (:sxql
                :dbi
+	       :cl-ppcre
                :trivial-types)
   :components ((:module "src"
                 :components
