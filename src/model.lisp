@@ -8,6 +8,7 @@
            :model-table-name-as-keyword
            :model-column-name-as-keyword
            :model-m2m-table-name-as-keyword
+	   :model-defined-slots
            :model-primary-key
            :model-foreign-keys
 	   :model-m2m-keys))
@@ -108,6 +109,14 @@
      :if (model-column-many-to-many column)
      :collect (cons (model-column-name-as-keyword (model-column-name column))
 		    (model-column-many-to-many column))))
+
+(defun model-defined-slots (model)
+  (let ((slots
+	 (loop :for column :in (model-columns model)
+	    :collect (model-column-name-as-keyword (model-column-name column)))))
+    (if (model-has-primary-key model)
+	slots
+	(push (model-column-name-as-keyword (model-column-name *default-primary-key*)) slots))))
 
 (defun at-most-one-of (&rest params)
   "Returns boolean indicating if zero or one of the parameters is not

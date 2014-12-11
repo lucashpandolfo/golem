@@ -21,6 +21,10 @@
   (columns nil :type list))
 
 ;;; Object manipulation
+(defun  validate-property-name (model property-name)
+  (unless (member property-name (model-defined-slots model))
+    (error "Invalid property (~S) for the model ~S." property-name (row-model row))))
+
 (defun create (model &rest params)
   "Create an object with a given model.
 
@@ -28,16 +32,23 @@
    TODO: Fill default values?"
   (check-type model symbol)
   ;Verify if model exist
-  (get-model model)
-  (assert (evenp (length params)) () "Even number of parameters expected while creating a ~a." model)
+  
+  (let ((model  (get-model model)))
+    (assert (evenp (length params)) () "Even number of parameters expected while creating a ~a." model)
+    (loop :for p :in params 
+       :for n :from 0
+       :do (when (evenp n) (validate-property-name model p))))
+  
   (make-row :model model :columns params))
 
 (defun get-property (row property-name)
   "Get a property from the object."
+  (validate-property-name (get-model (row-model row)) property-name)
   (getf (row-columns row) property-name))
 
 (defun (setf get-property) (value row property-name)
   "Set a property in the object."
+  (validate-property-name (get-model (row-model row)) property-name)
   (setf (getf (row-columns row) property-name) value)
   row)
 
