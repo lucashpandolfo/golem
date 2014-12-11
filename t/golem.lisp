@@ -35,6 +35,8 @@
 
 (connect-toplevel  :sqlite3 :database-name ":memory:")
 
+(diag "Testing model definitions")
+
 (is (initialize-models 'person 'musician 'album 'topping 'pizza) '((T) (T) (T) (T) (T T)) :test #'equalp "Initialize models")
 
 (ok (get-model 'pizza)  "Retrieve a defined model")
@@ -45,6 +47,9 @@
 
 (is (model-name (get-model 'musician)) 'musician "Correctly retrieve model name" :test #'eq)
 
+
+(diag "Testing model Creation")
+
 (ok (create 'person :first-name "John" :last-name "Doe") "Create an object")
 
 (is-error (create 'person :last-name "Doe") 'error "Create an object without defining a required field should fail")
@@ -54,6 +59,8 @@
 (is-error (create 'random-udefined-model) 'error "Create an object of an undefined model should fail")
 
 ;;; Simple objects
+(diag "Testing simple objects")
+
 (let ((one-person (create 'person :first-name "John" :last-name "Doe"))
       (another-person (create 'person :first-name "Natalia" :last-name "Natalia")))
   
@@ -98,6 +105,8 @@
   )
 
 ;;; Objects with foreign keys
+(diag "Testing objects with foreign keys")
+
 (let ((musician (create 'musician :first-name "Miku" :last-name "Hatsune" :instrument "Voice"))
       (album    (create 'album    :name "First Album" :num-stars 5)))
   
@@ -110,9 +119,23 @@
   (is (get-property album :artist) musician :test #'eq "Foreign key assignment should remain the same after save")
   
   (is-type (get-property musician :id) 'number "Foreign object should be saved along the main object")
+  
+  (let ((retrieved (fetch-one (all 'album))))
+
+    (let ((artist (get-property retrieved :artist)))
+      
+      (is-type artist 'golem.query::row "Retrieved foreign object has the correct type")
+      
+      (ok (and (string= (get-property retrieved :name) (get-property album :name))
+	       (= (get-property retrieved :num-stars) (get-property album :num-stars)))
+	  "Retrieve object with foreign key correctly")
+      
+      (is (get-property musician :id) (get-property artist :id) "Retrieved foreign object is the same")))
   )
 
 ;;; Objects with many to many
+(diag "Testing objects with m2m relationships")
+
 (let* ((cheese    (create 'topping :name "Chesse" :price 1))
        (onion     (create 'topping :name "Onion"  :price 2))
        (bacon     (create 'topping :name "Bacon"  :price 1.3))
