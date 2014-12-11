@@ -27,17 +27,7 @@
   (connection-driver-type *connection*))
 
 (defun connect-cached (&rest connect-args)
-  (let ((conn (gethash connect-args *connections*)))
-    (cond
-      ((null conn)
-       (setf (gethash connect-args *connections*)
-             (apply #'dbi:connect
-                    connect-args)))
-      ((not (dbi:ping conn))
-       (dbi:disconnect conn)
-       (remhash connect-args *connections*)
-       (apply #'connect-cached connect-args))
-      (T conn))))
+  (apply #'dbi:connect connect-args))
 
 (defun connect-toplevel (&rest connect-args)
   (when *connection*
