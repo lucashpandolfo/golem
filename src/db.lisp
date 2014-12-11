@@ -87,4 +87,3 @@
     (:sqlite3  (second (dbi:fetch (dbi:prepare *connection* "SELECT LAST_INSERT_ROWID();"))))
     (:mysql    (second (dbi:fetch (dbi:prepare *connection* "SELECT LAST_INSERT_ID();")))) 
     (:postgres (second (dbi:fetch (dbi:prepare *connection* "SELECT LASTVAL();"))))))
-

@@ -55,8 +55,7 @@
   TODO: 
   - Non standard primary key
   - validate types/models
-  - validate field names
-  - many-to-many"
+  - validate field names"
   (declare (optimize (debug 3)))
   (let* ((model             (get-model (row-model row)))
          (main-model-name   (model-name model))
@@ -137,7 +136,7 @@
 
 (defun all (model)
   "Create a query set matching all objects in the database for the
-   give model."
+   given model."
   (make-query-set :model model))
 
 (defun filter (query-set expression)
@@ -162,7 +161,7 @@
 
    TODO: 'order by'?.
    TODO: fetch many to many."
-  (let ((model (get-model (query-set-model query-set)))
+  (let ((model   (get-model (query-set-model query-set)))
         (filters (reverse (query-set-filters query-set))))
     (let ((expression (when filters 
 			(apply #'sxql:make-op 
