@@ -154,6 +154,17 @@
   (error "Not implemented.")
   )
 
+(defun recreate-object-from-plist (model plist)
+  "Reconstruct an object from a plist. First converts all keyword
+   symbols to be compatible with the rest of the system."
+  (let ((converted-plist
+	 ;; Convert the from :|symbol| to :symbol.  :/ 
+	 (loop :for element :in plist
+	    :for n :from 0
+	    :if (evenp n) :collect (intern (string-upcase (symbol-name element)) :keyword)
+	    :else :collect element)))
+    (apply #'create (model-name model) converted-plist)))
+
 (defun fetch (query-set &optional &key (limit nil) (offset 0))
   "Fetch the database entries matching the query-set filters (or all
    objects if no filters). Only 'limit' results are fetched, starting
@@ -161,41 +172,60 @@
 
    TODO: 'order by'?.
    TODO: fetch many to many."
-  (let ((model   (get-model (query-set-model query-set)))
-        (filters (reverse (query-set-filters query-set))))
+  (let* ((model      (get-model (query-set-model query-set)))
+	 (model-name (model-name model))
+	 (filters    (reverse   (query-set-filters query-set)))
+	 (model-pk   (model-primary-key model))
+	 )
     (let ((expression (when filters 
 			(apply #'sxql:make-op 
 			       :and
 			       (mapcar (lambda (f) (apply  #'sxql:make-op f)) filters))))
           (limit (when (and (numberp limit) (numberp offset)) (sxql:limit offset limit))))
       (let* ((clauses (list :select (sxql:fields :*) 
-                            (sxql:from (convert-column-name (model-name model)))
+                            (sxql:from (model-table-name-as-keyword model-name))
                             (if expression (sxql:make-clause :where expression) nil)
-                            limit
-                            ))
+                            limit))
              (result
               (fetch-with-connection
                (apply #'sxql:make-statement (remove-if #'null clauses)))))
-        (let ((objects (loop :for r :in result
-			  :collect
-			  (make-row :model (query-set-model query-set)
-				    :columns
-				    ;; Convert the from :|symbol| to :symbol.  :/ 
-				    (mapcar (lambda (e)
-					      (typecase e
-						(symbol (intern (string-upcase (symbol-name e)) :keyword))
-						(t e))) r)))))
+        (let ((retrieved-objects 
+	       (mapcar (lambda (o) 
+			 (recreate-object-from-plist model o))
+		       result)))
+          
+	  ;; Fetch foreign keys
           (let ((foreign-keys (model-foreign-keys model)))
-            (loop :for object :in objects :do
+            (loop :for object :in retrieved-objects :do
                (loop :for (fkey-name . fkey-model) :in foreign-keys :do
                   (let* ((foreign-model (get-model fkey-model))
                          (foreign-value (get-property object fkey-name)))
 		    (when foreign-value
 		      (setf (get-property object fkey-name)
 			    (fetch-one 
-			     (filter (all fkey-model) 
+			     (filter (all fkey-model)
 				     (list := (model-primary-key foreign-model) foreign-value)))))))))
-          objects)))))
+          
+	  ;; Fetch m2m objects
+          (let ((m2m-keys (model-m2m-keys model)))
+            (loop :for object :in retrieved-objects :do
+               (loop :for (m2m-key-name . m2m-model) :in m2m-keys :do
+                  (let* ((m2m-pk     (model-primary-key (get-model m2m-model)))
+                         (m2m-table  (model-m2m-table-name-as-keyword model m2m-key-name))
+			 (pk-value   (get-property object model-pk)))
+                    (let ((foreign-keys
+			   (mapcar #'second
+				   (fetch-with-connection
+				    (sxql:make-statement :select 
+							 (sxql:fields m2m-pk)
+							 (sxql:from m2m-table)
+							 (sxql:make-clause :where (list := (model-column-name-as-keyword model-name) pk-value)))))))
+		      (setf (get-property object m2m-key-name)
+			    (loop :for fkey :in foreign-keys
+			       :collect
+			       (fetch-one (filter (all m2m-model) (list := m2m-pk fkey))))))))))
+          
+          retrieved-objects)))))
 
 (defun fetch-one (query-set)
   "Fetch only the first entry matching the query-set."
