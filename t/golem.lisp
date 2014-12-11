@@ -72,9 +72,29 @@
   (let ((previous-id (get-property one-person :id)))
     (ok (save one-person) "Update an object")
     (is (get-property one-person :id) previous-id "Primary key should not change after an update")
-    )
+    
+    (let ((retrieved (fetch-one (filter (all 'person) '(:= :first-name "Jonh")))))
+      (ok (and (string=  (get-property retrieved :last-name) "Doe")
+	       (string=  (get-property retrieved :first-name) "Jonh")
+	       (= (get-property retrieved :id) (get-property one-person :id)))
+	  "Retrieve an updated object correctly")
+    ))
   
   (is-error (get-property one-person :undefined-random-slot-name) 'error "Attempts to use undefined slots should fail")
+  
+  (is (length (fetch (all 'person))) 2 "Retrieve all stored objects")
+  
+  (dotimes (i 5)
+    (save (create 'person :first-name "Dummy" :last-name "Dummier")))
+  
+  (is (length (fetch (all 'person) :limit 5))  5 "Limit a query")
+  
+  (is (length (fetch (all 'person) :limit 5 :offset 1)) 5 "Limit a query and start at offset")
+  
+  (is (length (fetch (all 'person) :limit 5 :offset 3)) 4 "Limit another query with offset ")
+
+  (is (length (fetch (all 'person) :limit 5 :offset 5)) 2 "Limit yet another query with offset")
+  
   )
 
 ;;; Objects with foreign keys
@@ -92,6 +112,7 @@
   (is-type (get-property musician :id) 'number "Foreign object should be saved along the main object")
   )
 
+;;; Objects with many to many
 (let* ((cheese    (create 'topping :name "Chesse" :price 1))
        (onion     (create 'topping :name "Onion"  :price 2))
        (bacon     (create 'topping :name "Bacon"  :price 1.3))
