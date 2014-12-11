@@ -23,7 +23,7 @@
 ;;; Object manipulation
 (defun  validate-property-name (model property-name)
   (unless (member property-name (model-defined-slots model))
-    (error "Invalid property (~S) for the model ~S." property-name (row-model row))))
+    (error "Invalid property (~S) for the model ~S." property-name (model-name model))))
 
 (defun create (model &rest params)
   "Create an object with a given model.
@@ -162,8 +162,8 @@
                   :filters (list* expression (query-set-filters query-set))))
 
 (defun exclude (query-set expression)
-  (error "Not implemented.")
-  )
+  (declare (ignorable query-set expression))
+  (error "Not implemented."))
 
 (defun recreate-object-from-plist (model plist)
   "Reconstruct an object from a plist. First converts all keyword
