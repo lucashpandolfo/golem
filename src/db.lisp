@@ -19,7 +19,7 @@
 (in-package :golem.db)
 
 ;;; MOSTLY FROM DATAFLY - https://github.com/fukamachi/datafly
-(defvar *trace-sql* t)
+(defvar *trace-sql* nil)
 
 (defparameter *sql-logger-pattern*
   "[%D{%H:%M:%S}] <DB> %m%n")
