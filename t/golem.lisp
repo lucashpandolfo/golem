@@ -179,7 +179,18 @@
     (is (length (remove-duplicates (list cheese-id onion-id bacon-id pepperoni-id))) 4
         "Indirectly saved objects should have different primary keys")
     
-    
+    (ok (fetch-one (filter (all 'pizza) '(:= :name "Pizza Deluxe"))) "Fetch an object with m2m relationship")
+	       
+    (let ((retrieved-pizza (fetch-one (filter (all 'pizza) '(:= :name "Medium pizza")))))
+     
+      (let ((retrieved-toppings (get-property retrieved-pizza :toppings)))
+	(is (length retrieved-toppings) 2 "Retrieved object has the correct number of m2m objects")
+
+	(ok (and (member (get-property (first retrieved-toppings) :id) (list cheese-id onion-id))
+		 (member (get-property (second retrieved-toppings):id) (list cheese-id onion-id))
+		 (not (= (get-property (first retrieved-toppings) :id) (get-property (second retrieved-toppings) :id))))
+	    "Retrieved the correct m2m objects"
+	    )))
     )
   )
 
