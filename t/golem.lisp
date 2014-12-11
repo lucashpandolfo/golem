@@ -17,7 +17,6 @@
   (first-name :type (:char 30) :null-allowed nil)
   (last-name  :type (:char 30)))
 
-
 (defmodel musician ()
   (first-name :type (:char 50))
   (last-name  :type (:char 50))
@@ -26,7 +25,6 @@
 (defmodel album ()
   (artist       :foreign-key musician)
   (name         :type (:char 100))
-  (release-date :type date)
   (num-stars    :type integer))
 
 (defmodel topping ()
@@ -57,6 +55,7 @@
 
 (is-error (create 'random-udefined-model) 'error "Create an object of an undefined model should fail")
 
+;;; Simple objects
 (let ((one-person (create 'person :first-name "John" :last-name "Doe"))
       (another-person (create 'person :first-name "Natalia" :last-name "Natalia")))
   
@@ -78,6 +77,22 @@
     )
   
   (is-error (get-property one-person :undefined-random-slot-name) 'error "Attempts to use undefined slots should fail")
+  )
+
+;;; Objects with foreign keys
+(let ((musician (create 'musician :first-name "Miku" :last-name "Hatsune" :instrument "Voice"))
+      (album    (create 'album    :name "First Album" :num-stars 5)))
+  
+  (is-error (setf (get-property album :artist) "Some garbage") 'error "Foreign keys should be only of the defined type")
+
+  (ok (setf (get-property album :artist) musician) "Correct foreign key assignment")
+  
+  (ok (save album) "Correctly save an object with foreign keys")
+  
+  (is (get-property album :artist) musician :test #'eq "Foreign key assignment should remain the same after save")
+  
+  (is-type (get-property musician :id) 'number "Foreign object should be saved along the main object")
+  
   )
 
 (disconnect-toplevel)
