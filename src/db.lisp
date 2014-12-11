@@ -19,6 +19,20 @@
 (in-package :golem.db)
 
 ;;; MOSTLY FROM DATAFLY - https://github.com/fukamachi/datafly
+(defvar *trace-sql* t)
+
+(defparameter *sql-logger-pattern*
+  "[%D{%H:%M:%S}] <DB> %m%n")
+
+(defvar *sql-logger*
+  (let ((logger (log:category '(golem))))
+    (log:config logger :own :trace)
+    (log4cl:add-appender logger
+                         (make-instance 'log4cl:this-console-appender
+                                        :layout (make-instance 'log4cl:pattern-layout
+                                                               :conversion-pattern *sql-logger-pattern*)))
+    logger))
+
 (defvar *connection* nil)
 
 (defvar *connections* (make-hash-table :test 'equal))
@@ -49,6 +63,20 @@
     (:sqlite3 #\")
     (T nil)))
 
+(defun get-prev-stack ()
+  #+sbcl
+  (let (prev-stack)
+    (sb-debug::map-backtrace
+     (lambda (frame)
+       (let ((fun (sb-di::debug-fun-name (sb-di::frame-debug-fun frame))))
+         (when (and (null prev-stack)
+                    (symbolp fun)
+                    (not (find (package-name (symbol-package fun))
+                               (list :common-lisp :datafly.db :function-cache)
+                               :test #'string=)))
+           (setf prev-stack fun)))))
+    prev-stack))
+
 (defun fetch-with-connection (statement)
   "Executes a statement and fetches the resulting rows."
   (multiple-value-bind (sql params)
@@ -59,6 +87,10 @@
           (otherwise (sxql:yield statement))))
     (let* ((prepared (dbi:prepare *connection* sql))
            (results (dbi:fetch-all (apply #'dbi:execute prepared params))))
+      (when *trace-sql*
+        (let ((stack (get-prev-stack)))
+          (log:trace :logger *sql-logger*
+                     "~A (~{~S~^, ~}) [~D row~:P]~:[~;~:* | ~S~]" sql params (length results) stack)))
       results)))
 
 (defun execute-with-connection (statement)
@@ -69,8 +101,8 @@
         (typecase statement
           (string (values statement nil))
           (otherwise (sxql:yield statement))))
-    (let* ((prepared (dbi:prepare *connection* sql)))
-      (apply #'dbi:execute prepared params)))
+    (let* ((prepared (dbi:prepare *connection* sql))
+	   (results (apply #'dbi:execute prepared params)))))
   (dbi:row-count *connection*))
 
 (defun last-row-id ()

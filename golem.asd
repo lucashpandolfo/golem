@@ -18,6 +18,7 @@
   :depends-on (:sxql
                :dbi
 	       :cl-ppcre
+	       :log4cl
                :trivial-types)
   :components ((:module "src"
                 :components
