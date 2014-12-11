@@ -7,8 +7,6 @@
         :prove))
 (in-package :golem-test)
 
-;; NOTE: To run this test file, execute `(asdf:test-system :golem)' in your Lisp.
-
 (plan nil)
 
 ;;; Define some models
@@ -92,7 +90,53 @@
   (is (get-property album :artist) musician :test #'eq "Foreign key assignment should remain the same after save")
   
   (is-type (get-property musician :id) 'number "Foreign object should be saved along the main object")
+  )
+
+(let* ((cheese    (create 'topping :name "Chesse" :price 1))
+       (onion     (create 'topping :name "Onion"  :price 2))
+       (bacon     (create 'topping :name "Bacon"  :price 1.3))
+       (pepperoni (create 'topping :name "Pepperoni" :price 2.5))
+       (pizza     (create 'pizza   :name "Plain old pizza"))
+       (pizza-2   (create 'pizza   :name "Medium pizza"))
+       (pizza-3   (create 'pizza   :name "Pizza Deluxe" ))
+      )
   
+  (is-error (setf (get-property pizza :toppings) '("Garbage" 2 "More garbage")) 'error "Many to many should allow only objects of the correct type")
+  
+  (ok (setf (get-property pizza :toppings) (list cheese)) "Assign many members of the correct type to the m2m field")
+  
+  (ok (save pizza) "Save an object with a many to many field")
+  
+  (is-type (get-property pizza :id) 'number "Primary key should be assigned after saving the object")
+  
+  (is-type (get-property cheese :id) 'number "Primary key should be assigned to the m2m objects too")
+  
+  (is (get-property pizza :toppings) (list cheese) :test #'equal "Many to many objects should not change after save")
+  
+  (setf (get-property pizza-2 :toppings) (list cheese onion))
+  
+  (ok (save pizza-2) "Save an object with a many to many field with two objects")
+  
+  (setf (get-property pizza-3 :toppings) (list cheese onion bacon pepperoni))
+  
+  (ok (save pizza-3) "Save an object with a many to many field with more than two objects")
+  
+  (let ((cheese-id    (get-property cheese    :id))
+        (onion-id     (get-property onion     :id))
+        (bacon-id     (get-property bacon     :id))
+        (pepperoni-id (get-property pepperoni :id))
+        (pizza-id     (get-property pizza     :id))
+        (pizza-2-id   (get-property pizza-2   :id))
+        (pizza-3-id   (get-property pizza-3   :id)))
+    
+    (ok (not (or (= pizza-id pizza-2-id) (= pizza-id pizza-3-id) (= pizza-2-id pizza-3-id)))
+        "Saved objects should have different primary keys")
+    
+    (is (length (remove-duplicates (list cheese-id onion-id bacon-id pepperoni-id))) 4
+        "Indirectly saved objects should have different primary keys")
+    
+    
+    )
   )
 
 (disconnect-toplevel)

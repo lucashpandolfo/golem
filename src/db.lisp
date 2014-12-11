@@ -27,6 +27,8 @@
   (connection-driver-type *connection*))
 
 (defun connect-cached (&rest connect-args)
+  ;; Connection cache was disabled because it was not working with
+  ;; sqlite (the testing db)
   (apply #'dbi:connect connect-args))
 
 (defun connect-toplevel (&rest connect-args)
