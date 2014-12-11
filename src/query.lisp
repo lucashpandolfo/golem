@@ -212,12 +212,13 @@
                (loop :for (m2m-key-name . m2m-model) :in m2m-keys :do
                   (let* ((m2m-pk     (model-primary-key (get-model m2m-model)))
                          (m2m-table  (model-m2m-table-name-as-keyword model m2m-key-name))
-			 (pk-value   (get-property object model-pk)))
+			 (pk-value   (get-property object model-pk))
+			 (m2m-foreign-name (model-column-name-as-keyword m2m-model)))
                     (let ((foreign-keys
 			   (mapcar #'second
 				   (fetch-with-connection
 				    (sxql:make-statement :select 
-							 (sxql:fields m2m-pk)
+							 (sxql:fields m2m-foreign-name)
 							 (sxql:from m2m-table)
 							 (sxql:make-clause :where (list := (model-column-name-as-keyword model-name) pk-value)))))))
 		      (setf (get-property object m2m-key-name)
