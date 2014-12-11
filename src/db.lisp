@@ -63,20 +63,6 @@
     (:sqlite3 #\")
     (T nil)))
 
-(defun get-prev-stack ()
-  #+sbcl
-  (let (prev-stack)
-    (sb-debug::map-backtrace
-     (lambda (frame)
-       (let ((fun (sb-di::debug-fun-name (sb-di::frame-debug-fun frame))))
-         (when (and (null prev-stack)
-                    (symbolp fun)
-                    (not (find (package-name (symbol-package fun))
-                               (list :common-lisp :datafly.db :function-cache)
-                               :test #'string=)))
-           (setf prev-stack fun)))))
-    prev-stack))
-
 (defun fetch-with-connection (statement)
   "Executes a statement and fetches the resulting rows."
   (multiple-value-bind (sql params)
@@ -88,9 +74,8 @@
     (let* ((prepared (dbi:prepare *connection* sql))
            (results (dbi:fetch-all (apply #'dbi:execute prepared params))))
       (when *trace-sql*
-        (let ((stack (get-prev-stack)))
-          (log:trace :logger *sql-logger*
-                     "~A (~{~S~^, ~}) [~D row~:P]~:[~;~:* | ~S~]" sql params (length results) stack)))
+	(log:trace :logger *sql-logger*
+		   "~A (~{~S~^, ~}) [~D row~:P]" sql params (length results)))
       results)))
 
 (defun execute-with-connection (statement)
@@ -102,7 +87,10 @@
           (string (values statement nil))
           (otherwise (sxql:yield statement))))
     (let* ((prepared (dbi:prepare *connection* sql))
-	   (results (apply #'dbi:execute prepared params)))))
+	   (results (apply #'dbi:execute prepared params)))
+      (when *trace-sql*
+	(log:trace :logger *sql-logger*
+		   "~A (~{~S~^, ~})" sql params))))
   (dbi:row-count *connection*))
 
 (defun last-row-id ()
